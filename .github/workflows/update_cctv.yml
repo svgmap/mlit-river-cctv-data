@@ -1,0 +1,43 @@
+name: Update CCTV CSV Data
+
+on:
+  schedule:
+    # 毎月1日と15日の UTC0:00 ＝ 日本時間(JST)の 朝9:00 に実行
+    - cron: '0 0 1,15 * *'
+  workflow_dispatch:
+    # GitHubの画面上から「Run workflow」ボタンで手動実行するための設定
+
+# GitHub Actions (Bot) がリポジトリへファイルを書き込む（Pushする）ための権限
+permissions:
+  contents: write
+
+jobs:
+  update-csv:
+    runs-on: ubuntu-latest
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v4
+
+      - name: Node.jsのセットアップ
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: スクリプトの実行（データ取得とファイル生成）
+        # もしJS内でエラー（タイムアウト等）が発生した場合、プロセスが異常終了(exit code 1)します。
+        # するとGitHub Actionsは「このステップは失敗した」と判断し、これ以降のステップ（Gitコミット）を自動的にすべてキャンセルします。
+        # これにより、不完全なデータがアップロードされるのを100%防ぐことができます。
+        run: node fetch_cctv.js
+
+      - name: 変更をコミットしてプッシュ
+        # 上のステップが「成功」した場合のみ、ここが実行されます。
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          
+          # CSVファイルと、更新ステータスJSONの両方をGitの監視対象に追加する
+          git add cctv_list.csv update_status.json
+          
+          # 差分（データの内容に変更）がある場合のみ、コミットしてプッシュする
+          # （データが前回と全く同じなら、無駄なコミットはしません）
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Auto-update CCTV CSV and Status" && git push)
